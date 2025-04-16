@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频切割与随机播放</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>音频录制与随机播放器</h1>
+        
+        <div class="recording-section">
+            <button id="recordButton" class="btn">开始录音</button>
+            <div id="recordingStatus" class="status"></div>
+        </div>
+
+        <div class="audio-controls">
+            <div class="original-audio">
+                <h2>原始录音</h2>
+                <audio id="originalAudio" controls></audio>
+            </div>
+
+            <div class="segments-control">
+                <h2>音频片段设置</h2>
+                <label for="segmentLength">片段长度 (秒):</label>
+                <input type="number" id="segmentLength" value="2" min="1" max="10">
+                <button id="splitButton" class="btn" disabled>切割音频</button>
+            </div>
+
+            <div class="playback-control">
+                <h2>随机播放控制</h2>
+                <button id="playRandomButton" class="btn" disabled>随机播放</button>
+                <button id="stopPlaybackButton" class="btn" disabled>停止播放</button>
+            </div>
+
+            <div class="save-section">
+                <h2>保存混音</h2>
+                <button id="saveButton" class="btn" disabled>保存当前混音</button>
+            </div>
+        </div>
+
+        <div id="segmentsList" class="segments-list">
+            <h2>音频片段列表</h2>
+            <div id="segments"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 

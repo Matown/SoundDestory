@@ -1,0 +1,232 @@
+let mediaRecorder;
+let audioChunks = [];
+let audioSegments = [];
+let isRecording = false;
+let isPlaying = false;
+let currentPlaylist = [];
+
+// DOM 元素
+const recordButton = document.getElementById('recordButton');
+const recordingStatus = document.getElementById('recordingStatus');
+const originalAudio = document.getElementById('originalAudio');
+const splitButton = document.getElementById('splitButton');
+const playRandomButton = document.getElementById('playRandomButton');
+const stopPlaybackButton = document.getElementById('stopPlaybackButton');
+const saveButton = document.getElementById('saveButton');
+const segmentLengthInput = document.getElementById('segmentLength');
+const segmentsContainer = document.getElementById('segments');
+
+// 录音功能
+recordButton.addEventListener('click', async () => {
+    if (!isRecording) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                originalAudio.src = URL.createObjectURL(audioBlob);
+                splitButton.disabled = false;
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            recordButton.textContent = '停止录音';
+            recordButton.classList.add('recording');
+            recordingStatus.textContent = '正在录音...';
+        } catch (err) {
+            console.error('录音失败:', err);
+            recordingStatus.textContent = '无法访问麦克风';
+        }
+    } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        recordButton.textContent = '开始录音';
+        recordButton.classList.remove('recording');
+        recordingStatus.textContent = '录音已完成';
+    }
+});
+
+// 切割音频
+splitButton.addEventListener('click', async () => {
+    const segmentLength = parseFloat(segmentLengthInput.value);
+    if (isNaN(segmentLength) || segmentLength <= 0) {
+        alert('请输入有效的片段长度');
+        return;
+    }
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const response = await fetch(originalAudio.src);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioBuffer(arrayBuffer);
+
+    const numberOfSegments = Math.floor(audioBuffer.duration / segmentLength);
+    audioSegments = [];
+    segmentsContainer.innerHTML = '';
+
+    for (let i = 0; i < numberOfSegments; i++) {
+        const startTime = i * segmentLength;
+        const segmentBuffer = new AudioBuffer({
+            length: segmentLength * audioContext.sampleRate,
+            numberOfChannels: audioBuffer.numberOfChannels,
+            sampleRate: audioBuffer.sampleRate
+        });
+
+        for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+            const channelData = audioBuffer.getChannelData(channel);
+            const segmentData = segmentBuffer.getChannelData(channel);
+            for (let j = 0; j < segmentBuffer.length; j++) {
+                segmentData[j] = channelData[j + Math.floor(startTime * audioContext.sampleRate)];
+            }
+        }
+
+        const segmentBlob = await audioBufferToWav(segmentBuffer);
+        audioSegments.push(segmentBlob);
+
+        // 创建音频片段预览
+        const segmentElement = document.createElement('div');
+        segmentElement.className = 'segment';
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = URL.createObjectURL(segmentBlob);
+        segmentElement.appendChild(audio);
+        segmentsContainer.appendChild(segmentElement);
+    }
+
+    playRandomButton.disabled = false;
+    stopPlaybackButton.disabled = false;
+    saveButton.disabled = false;
+});
+
+// 随机播放功能
+playRandomButton.addEventListener('click', () => {
+    if (!isPlaying) {
+        isPlaying = true;
+        currentPlaylist = [...audioSegments].sort(() => Math.random() - 0.5);
+        playNextSegment();
+        playRandomButton.textContent = '暂停播放';
+    } else {
+        isPlaying = false;
+        playRandomButton.textContent = '随机播放';
+    }
+});
+
+stopPlaybackButton.addEventListener('click', () => {
+    isPlaying = false;
+    currentPlaylist = [];
+    playRandomButton.textContent = '随机播放';
+});
+
+function playNextSegment() {
+    if (!isPlaying || currentPlaylist.length === 0) {
+        isPlaying = false;
+        playRandomButton.textContent = '随机播放';
+        return;
+    }
+
+    const segment = currentPlaylist.shift();
+    const audio = new Audio(URL.createObjectURL(segment));
+    audio.onended = playNextSegment;
+    audio.play();
+}
+
+// 保存混音功能
+saveButton.addEventListener('click', async () => {
+    if (audioSegments.length === 0) return;
+
+    const randomSegments = [...audioSegments].sort(() => Math.random() - 0.5);
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let totalLength = 0;
+
+    // 计算总长度
+    for (const segment of randomSegments) {
+        const arrayBuffer = await segment.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioBuffer(arrayBuffer);
+        totalLength += audioBuffer.length;
+    }
+
+    // 创建最终的音频缓冲区
+    const finalBuffer = new AudioBuffer({
+        length: totalLength,
+        numberOfChannels: 2,
+        sampleRate: audioContext.sampleRate
+    });
+
+    let offset = 0;
+    for (const segment of randomSegments) {
+        const arrayBuffer = await segment.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioBuffer(arrayBuffer);
+        
+        for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+            const channelData = audioBuffer.getChannelData(channel);
+            const finalData = finalBuffer.getChannelData(channel);
+            for (let i = 0; i < audioBuffer.length; i++) {
+                finalData[i + offset] = channelData[i];
+            }
+        }
+        offset += audioBuffer.length;
+    }
+
+    const finalBlob = await audioBufferToWav(finalBuffer);
+    const url = URL.createObjectURL(finalBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '随机混音_' + new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + '.wav';
+    a.click();
+});
+
+// 辅助函数：将 AudioBuffer 转换为 WAV 格式
+function audioBufferToWav(buffer) {
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numberOfChannels * bytesPerSample;
+
+    const wav = new ArrayBuffer(44 + buffer.length * blockAlign);
+    const view = new DataView(wav);
+
+    // WAV 文件头
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + buffer.length * blockAlign, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, buffer.length * blockAlign, true);
+
+    const channels = [];
+    for (let i = 0; i < numberOfChannels; i++) {
+        channels.push(buffer.getChannelData(i));
+    }
+
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+            const sample = Math.max(-1, Math.min(1, channels[channel][i]));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+            offset += bytesPerSample;
+        }
+    }
+
+    return new Blob([wav], { type: 'audio/wav' });
+}
+
+function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+} 
