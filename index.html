@@ -3,6 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="一个简单的在线音频切割与随机播放工具，支持录音、切割、随机播放和保存混音">
+    <meta name="keywords" content="音频处理,音频切割,随机播放,在线工具,网页录音">
+    <meta name="author" content="SoundDestory">
+    <meta name="robots" content="index,follow">
     <title>音频切割与随机播放</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -24,7 +28,7 @@
             <div class="segments-control">
                 <h2>音频片段设置</h2>
                 <label for="segmentLength">片段长度 (秒):</label>
-                <input type="number" id="segmentLength" value="2" min="1" max="10">
+                <input type="number" id="segmentLength" value="1.0" min="0.1" max="2.0" step="0.1">
                 <button id="splitButton" class="btn" disabled>切割音频</button>
             </div>
 
