@@ -74,8 +74,12 @@ splitButton.addEventListener('click', async () => {
         const response = await fetch(audioUrl);
         const arrayBuffer = await response.arrayBuffer();
         
-        // 解码音频数据
-        audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
+        try {
+            // 解码音频数据
+            const audioBuffer = await new Promise((resolve, reject) => {
+                audioContext.decodeAudioData(arrayBuffer, resolve, reject);
+            });
+
             const numberOfSegments = Math.floor(audioBuffer.duration / segmentLength);
             audioSegments = [];
             segmentsContainer.innerHTML = '';
@@ -84,7 +88,7 @@ splitButton.addEventListener('click', async () => {
                 const startTime = i * segmentLength;
                 const segmentBuffer = audioContext.createBuffer(
                     audioBuffer.numberOfChannels,
-                    segmentLength * audioContext.sampleRate,
+                    Math.floor(segmentLength * audioContext.sampleRate),
                     audioContext.sampleRate
                 );
 
@@ -117,10 +121,11 @@ splitButton.addEventListener('click', async () => {
             playRandomButton.disabled = false;
             stopPlaybackButton.disabled = false;
             saveButton.disabled = false;
-        }, (error) => {
-            console.error('音频解码失败:', error);
+
+        } catch (decodeError) {
+            console.error('音频解码失败:', decodeError);
             alert('音频处理失败，请重试');
-        });
+        }
     } catch (error) {
         console.error('切割过程出错:', error);
         alert('音频切割失败，请重试');
@@ -167,41 +172,50 @@ saveButton.addEventListener('click', async () => {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     let totalLength = 0;
 
-    // 计算总长度
-    for (const segment of randomSegments) {
-        const arrayBuffer = await segment.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioBuffer(arrayBuffer);
-        totalLength += audioBuffer.length;
-    }
-
-    // 创建最终的音频缓冲区
-    const finalBuffer = new AudioBuffer({
-        length: totalLength,
-        numberOfChannels: 2,
-        sampleRate: audioContext.sampleRate
-    });
-
-    let offset = 0;
-    for (const segment of randomSegments) {
-        const arrayBuffer = await segment.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioBuffer(arrayBuffer);
-        
-        for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-            const channelData = audioBuffer.getChannelData(channel);
-            const finalData = finalBuffer.getChannelData(channel);
-            for (let i = 0; i < audioBuffer.length; i++) {
-                finalData[i + offset] = channelData[i];
-            }
+    try {
+        // 计算总长度
+        for (const segment of randomSegments) {
+            const arrayBuffer = await segment.arrayBuffer();
+            const audioBuffer = await new Promise((resolve, reject) => {
+                audioContext.decodeAudioData(arrayBuffer, resolve, reject);
+            });
+            totalLength += audioBuffer.length;
         }
-        offset += audioBuffer.length;
-    }
 
-    const finalBlob = await audioBufferToWav(finalBuffer);
-    const url = URL.createObjectURL(finalBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '随机混音_' + new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + '.wav';
-    a.click();
+        // 创建最终的音频缓冲区
+        const finalBuffer = audioContext.createBuffer(
+            2, // numberOfChannels
+            totalLength,
+            audioContext.sampleRate
+        );
+
+        let offset = 0;
+        for (const segment of randomSegments) {
+            const arrayBuffer = await segment.arrayBuffer();
+            const audioBuffer = await new Promise((resolve, reject) => {
+                audioContext.decodeAudioData(arrayBuffer, resolve, reject);
+            });
+            
+            for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+                const channelData = audioBuffer.getChannelData(channel);
+                const finalData = finalBuffer.getChannelData(channel);
+                for (let i = 0; i < audioBuffer.length; i++) {
+                    finalData[i + offset] = channelData[i];
+                }
+            }
+            offset += audioBuffer.length;
+        }
+
+        const finalBlob = audioBufferToWav(finalBuffer);
+        const url = URL.createObjectURL(finalBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '随机混音_' + new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + '.wav';
+        a.click();
+    } catch (error) {
+        console.error('保存混音失败:', error);
+        alert('保存混音失败，请重试');
+    }
 });
 
 // 辅助函数：将 AudioBuffer 转换为 WAV 格式
