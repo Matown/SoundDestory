@@ -56,8 +56,9 @@ recordButton.addEventListener('click', async () => {
 splitButton.addEventListener('click', async () => {
     try {
         const segmentLength = parseFloat(segmentLengthInput.value);
-        if (isNaN(segmentLength) || segmentLength <= 0) {
-            alert('请输入有效的片段长度');
+        // 验证片段长度是否在有效范围内
+        if (isNaN(segmentLength) || segmentLength < 0.1 || segmentLength > 2.0) {
+            alert('请输入有效的片段长度（0.1秒到2.0秒之间）');
             return;
         }
 
@@ -80,9 +81,21 @@ splitButton.addEventListener('click', async () => {
                 audioContext.decodeAudioData(arrayBuffer, resolve, reject);
             });
 
+            // 确保音频长度足够进行切割
+            if (audioBuffer.duration < segmentLength) {
+                alert('录音时间太短，请录制更长的音频或减小片段长度');
+                return;
+            }
+
             const numberOfSegments = Math.floor(audioBuffer.duration / segmentLength);
             audioSegments = [];
             segmentsContainer.innerHTML = '';
+
+            // 添加进度提示
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'status';
+            statusDiv.textContent = '正在处理音频...';
+            segmentsContainer.appendChild(statusDiv);
 
             for (let i = 0; i < numberOfSegments; i++) {
                 const startTime = i * segmentLength;
@@ -113,9 +126,22 @@ splitButton.addEventListener('click', async () => {
                 const audio = document.createElement('audio');
                 audio.controls = true;
                 audio.src = URL.createObjectURL(wavBlob);
+                
+                // 添加片段标签
+                const label = document.createElement('div');
+                label.className = 'segment-label';
+                label.textContent = `片段 ${i + 1} (${segmentLength}秒)`;
+                
+                segmentElement.appendChild(label);
                 segmentElement.appendChild(audio);
                 segmentsContainer.appendChild(segmentElement);
+
+                // 更新进度
+                statusDiv.textContent = `正在处理音频... ${Math.round((i + 1) / numberOfSegments * 100)}%`;
             }
+
+            // 移除进度提示
+            statusDiv.remove();
 
             // 启用播放和保存按钮
             playRandomButton.disabled = false;
