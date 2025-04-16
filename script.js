@@ -54,53 +54,77 @@ recordButton.addEventListener('click', async () => {
 
 // 切割音频
 splitButton.addEventListener('click', async () => {
-    const segmentLength = parseFloat(segmentLengthInput.value);
-    if (isNaN(segmentLength) || segmentLength <= 0) {
-        alert('请输入有效的片段长度');
-        return;
-    }
-
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const response = await fetch(originalAudio.src);
-    const arrayBuffer = await response.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioBuffer(arrayBuffer);
-
-    const numberOfSegments = Math.floor(audioBuffer.duration / segmentLength);
-    audioSegments = [];
-    segmentsContainer.innerHTML = '';
-
-    for (let i = 0; i < numberOfSegments; i++) {
-        const startTime = i * segmentLength;
-        const segmentBuffer = new AudioBuffer({
-            length: segmentLength * audioContext.sampleRate,
-            numberOfChannels: audioBuffer.numberOfChannels,
-            sampleRate: audioBuffer.sampleRate
-        });
-
-        for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-            const channelData = audioBuffer.getChannelData(channel);
-            const segmentData = segmentBuffer.getChannelData(channel);
-            for (let j = 0; j < segmentBuffer.length; j++) {
-                segmentData[j] = channelData[j + Math.floor(startTime * audioContext.sampleRate)];
-            }
+    try {
+        const segmentLength = parseFloat(segmentLengthInput.value);
+        if (isNaN(segmentLength) || segmentLength <= 0) {
+            alert('请输入有效的片段长度');
+            return;
         }
 
-        const segmentBlob = await audioBufferToWav(segmentBuffer);
-        audioSegments.push(segmentBlob);
+        // 创建音频上下文
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // 获取原始音频数据
+        const audioUrl = originalAudio.src;
+        if (!audioUrl) {
+            alert('请先录制音频');
+            return;
+        }
 
-        // 创建音频片段预览
-        const segmentElement = document.createElement('div');
-        segmentElement.className = 'segment';
-        const audio = document.createElement('audio');
-        audio.controls = true;
-        audio.src = URL.createObjectURL(segmentBlob);
-        segmentElement.appendChild(audio);
-        segmentsContainer.appendChild(segmentElement);
+        const response = await fetch(audioUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        
+        // 解码音频数据
+        audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
+            const numberOfSegments = Math.floor(audioBuffer.duration / segmentLength);
+            audioSegments = [];
+            segmentsContainer.innerHTML = '';
+
+            for (let i = 0; i < numberOfSegments; i++) {
+                const startTime = i * segmentLength;
+                const segmentBuffer = audioContext.createBuffer(
+                    audioBuffer.numberOfChannels,
+                    segmentLength * audioContext.sampleRate,
+                    audioContext.sampleRate
+                );
+
+                // 复制音频数据到新的缓冲区
+                for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+                    const channelData = audioBuffer.getChannelData(channel);
+                    const segmentData = segmentBuffer.getChannelData(channel);
+                    const offset = Math.floor(startTime * audioContext.sampleRate);
+                    
+                    for (let j = 0; j < segmentBuffer.length && (j + offset) < channelData.length; j++) {
+                        segmentData[j] = channelData[j + offset];
+                    }
+                }
+
+                // 将音频片段转换为 Blob
+                const wavBlob = audioBufferToWav(segmentBuffer);
+                audioSegments.push(wavBlob);
+
+                // 创建音频片段预览
+                const segmentElement = document.createElement('div');
+                segmentElement.className = 'segment';
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.src = URL.createObjectURL(wavBlob);
+                segmentElement.appendChild(audio);
+                segmentsContainer.appendChild(segmentElement);
+            }
+
+            // 启用播放和保存按钮
+            playRandomButton.disabled = false;
+            stopPlaybackButton.disabled = false;
+            saveButton.disabled = false;
+        }, (error) => {
+            console.error('音频解码失败:', error);
+            alert('音频处理失败，请重试');
+        });
+    } catch (error) {
+        console.error('切割过程出错:', error);
+        alert('音频切割失败，请重试');
     }
-
-    playRandomButton.disabled = false;
-    stopPlaybackButton.disabled = false;
-    saveButton.disabled = false;
 });
 
 // 随机播放功能
