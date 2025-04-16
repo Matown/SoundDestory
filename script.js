@@ -199,13 +199,23 @@ saveButton.addEventListener('click', async () => {
     let totalLength = 0;
 
     try {
+        // 显示保存进度
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'status';
+        statusDiv.textContent = '正在处理音频...';
+        segmentsContainer.appendChild(statusDiv);
+
         // 计算总长度
-        for (const segment of randomSegments) {
+        for (let i = 0; i < randomSegments.length; i++) {
+            const segment = randomSegments[i];
             const arrayBuffer = await segment.arrayBuffer();
             const audioBuffer = await new Promise((resolve, reject) => {
                 audioContext.decodeAudioData(arrayBuffer, resolve, reject);
             });
             totalLength += audioBuffer.length;
+
+            // 更新进度
+            statusDiv.textContent = `正在计算音频长度... ${Math.round((i + 1) / randomSegments.length * 50)}%`;
         }
 
         // 创建最终的音频缓冲区
@@ -216,7 +226,8 @@ saveButton.addEventListener('click', async () => {
         );
 
         let offset = 0;
-        for (const segment of randomSegments) {
+        for (let i = 0; i < randomSegments.length; i++) {
+            const segment = randomSegments[i];
             const arrayBuffer = await segment.arrayBuffer();
             const audioBuffer = await new Promise((resolve, reject) => {
                 audioContext.decodeAudioData(arrayBuffer, resolve, reject);
@@ -225,19 +236,27 @@ saveButton.addEventListener('click', async () => {
             for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
                 const channelData = audioBuffer.getChannelData(channel);
                 const finalData = finalBuffer.getChannelData(channel);
-                for (let i = 0; i < audioBuffer.length; i++) {
-                    finalData[i + offset] = channelData[i];
+                for (let j = 0; j < audioBuffer.length; j++) {
+                    finalData[j + offset] = channelData[j];
                 }
             }
             offset += audioBuffer.length;
+
+            // 更新进度
+            statusDiv.textContent = `正在合成音频... ${Math.round(50 + (i + 1) / randomSegments.length * 50)}%`;
         }
 
+        // 转换为WAV并保存
+        statusDiv.textContent = '正在保存音频...';
         const finalBlob = audioBufferToWav(finalBuffer);
         const url = URL.createObjectURL(finalBlob);
         const a = document.createElement('a');
         a.href = url;
         a.download = '随机混音_' + new Date().toISOString().slice(0, 19).replace(/[-:]/g, '') + '.wav';
         a.click();
+
+        // 移除进度提示
+        statusDiv.remove();
     } catch (error) {
         console.error('保存混音失败:', error);
         alert('保存混音失败，请重试');
