@@ -20,31 +20,79 @@ const segmentsContainer = document.getElementById('segments');
 recordButton.addEventListener('click', async () => {
     if (!isRecording) {
         try {
+            console.log('请求麦克风权限...');
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log('麦克风权限已获取，Stream:', stream);
+            
+            const audioTracks = stream.getAudioTracks();
+            console.log('音频轨道:', audioTracks);
+            if (audioTracks.length === 0) {
+                console.error('错误：获取到的流中没有音频轨道！');
+                recordingStatus.textContent = '错误：无音频轨道';
+                return;
+            }
+            console.log('音频轨道状态:', audioTracks[0].readyState, '启用:', audioTracks[0].enabled);
+
             mediaRecorder = new MediaRecorder(stream);
+            console.log('MediaRecorder 已创建:', mediaRecorder);
             audioChunks = [];
 
             mediaRecorder.ondataavailable = (event) => {
-                audioChunks.push(event.data);
+                console.log('ondataavailable 事件触发，数据大小:', event.data.size);
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
             };
 
             mediaRecorder.onstop = () => {
+                console.log('onstop 事件触发，总数据块数量:', audioChunks.length);
+                if (audioChunks.length === 0) {
+                    console.error('错误：没有收集到任何音频数据块！');
+                    recordingStatus.textContent = '错误：未录制到数据';
+                    splitButton.disabled = true;
+                    return;
+                }
                 const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                console.log('录音完成，Blob 大小:', audioBlob.size, '类型:', audioBlob.type);
+                if (audioBlob.size < 1000) { // 小于1KB通常意味着是空的或接近空的
+                    console.warn('警告：录制的 Blob 文件非常小，可能为空。');
+                }
                 originalAudio.src = URL.createObjectURL(audioBlob);
                 splitButton.disabled = false;
+                console.log('原始音频元素 src 已设置');
+            };
+
+            mediaRecorder.onerror = (event) => {
+                console.error('MediaRecorder 错误:', event.error);
+                recordingStatus.textContent = `录音错误: ${event.error.name}`;
+                isRecording = false;
+                recordButton.textContent = '开始录音';
+                recordButton.classList.remove('recording');
             };
 
             mediaRecorder.start();
+            console.log('MediaRecorder 已启动');
             isRecording = true;
             recordButton.textContent = '停止录音';
             recordButton.classList.add('recording');
             recordingStatus.textContent = '正在录音...';
         } catch (err) {
-            console.error('录音失败:', err);
-            recordingStatus.textContent = '无法访问麦克风';
+            console.error('录音失败 (getUserMedia 或后续步骤):', err);
+            recordingStatus.textContent = `无法访问麦克风: ${err.name}`;
         }
     } else {
-        mediaRecorder.stop();
+        console.log('尝试停止录音...');
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            console.log('MediaRecorder 已停止');
+        } else {
+            console.warn('警告：MediaRecorder 不存在或状态不是 recording', mediaRecorder ? mediaRecorder.state : 'undefined');
+        }
+        // 停止所有音轨，释放麦克风
+        if (mediaRecorder && mediaRecorder.stream) {
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            console.log('所有媒体轨道已停止');
+        }
         isRecording = false;
         recordButton.textContent = '开始录音';
         recordButton.classList.remove('recording');
